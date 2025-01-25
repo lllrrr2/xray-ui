@@ -7,6 +7,17 @@ green() { echo -e "\033[32m\033[01m$1\033[0m"; }
 blue() { echo -e "\033[36m\033[01m$1\033[0m"; }
 yellow() { echo -e "\033[33m\033[01m$1\033[0m"; }
 # check root
+function LOGD() {
+    echo -e "${yellow}[DEG] $* ${plain}"
+}
+
+function LOGE() {
+    echo -e "${red}[ERR] $* ${plain}"
+}
+
+function LOGI() {
+    echo -e "${green}[INF] $* ${plain}"
+}
 
 [[ $EUID -ne 0 ]] && echo -e "${red}错误: ${plain}  必须使用root用户运行此脚本！\n" && exit 1
 
@@ -118,6 +129,21 @@ install() {
     fi
 }
 
+arch() {
+    case "$(uname -m)" in
+    x86_64 | x64 | amd64) echo 'amd64' ;;
+    i*86 | x86) echo '386' ;;
+    armv8* | armv8 | arm64 | aarch64) echo 'arm64' ;;
+    armv7* | armv7 | arm) echo 'armv7' ;;
+    armv6* | armv6) echo 'armv6' ;;
+    armv5* | armv5) echo 'armv5' ;;
+    s390x) echo 's390x' ;;
+    *) echo -e "${green}Unsupported CPU architecture! ${plain}" && rm -f install.sh && exit 1 ;;
+    esac
+}
+
+echo "arch: $(arch)"
+
 update() {
     confirm "本功能会强制重装当前最新版，数据不会丢失，是否继续?" "n"
     if [[ $? != 0 ]]; then
@@ -127,18 +153,6 @@ update() {
         fi
         return 0
     fi
-    arch=$(arch)
-    if [[ $arch == "x86_64" || $arch == "x64" || $arch == "amd64" ]]; then
-        arch="amd64"
-    elif [[ $arch == "aarch64" || $arch == "arm64" ]]; then
-        arch="arm64"
-    elif [[ $arch == "s390x" ]]; then
-        arch="s390x"
-    else
-        arch="amd64"
-        echo -e "${red}检测架构失败，使用默认架构: ${arch}${plain}"
-    fi
-    
     if [[ x"${release}" == x"centos" ]]; then
         setenforce 0 >/dev/null 2>&1
     fi
@@ -149,7 +163,7 @@ update() {
     mkdir -p /tmp/xray
     cd /tmp/xray
     if [ $# == 0 ]; then
-        wget -N --no-check-certificate -O /tmp/xray/xray-ui-linux-${arch}.tar.gz https://github.com/qist/xray-ui/releases/download/${releases_version}/xray-ui-linux-${arch}.tar.gz
+        wget --no-check-certificate -O /tmp/xray/xray-ui-linux-$(arch).tar.gz https://github.com/qist/xray-ui/releases/download/${releases_version}/xray-ui-linux-$(arch).tar.gz
         if [[ $? -ne 0 ]]; then
             echo -e "${red}下载 xray-ui 失败，请确保你的服务器能够下载 Github 的文件${plain}"
             rm -f install.sh
@@ -157,9 +171,9 @@ update() {
         fi
     else
         last_version=$1
-        url="https://github.com/qist/xray-ui/releases/download/${releases_version}/xray-ui-linux-${arch}.tar.gz"
+        url="https://github.com/qist/xray-ui/releases/download/${releases_version}/xray-ui-linux-$(arch).tar.gz"
         echo -e "开始安装 xray-ui v$1"
-        wget -N --no-check-certificate -O /tmp/xray/xray-ui-linux-${arch}.tar.gz ${url}
+        wget --no-check-certificate -O /tmp/xray/xray-ui-linux-$(arch).tar.gz ${url}
         if [[ $? -ne 0 ]]; then
             echo -e "${red}下载 xray-ui v$1 失败，请确保此版本存在${plain}"
             rm -f install.sh
@@ -170,11 +184,15 @@ update() {
         rm /usr/local/xray-ui/xray-ui -f
         rm /usr/local/xray-ui/xray-ui.service -f
     fi
-    tar zxvf xray-ui-linux-${arch}.tar.gz
+    tar zxvf xray-ui-linux-$(arch).tar.gz
     mv /tmp/xray/xray-ui/{xray-ui,xray-ui.service} /usr/local/xray-ui/
     rm /tmp/xray -rf
     cd /usr/local/xray-ui
-    chmod +x xray-ui bin/xray-linux-${arch}
+    if [[ $(arch) == "armv5" || $(arch) == "armv6" || $(arch) == "armv7" ]]; then
+        mv bin/xray-linux-$(arch) bin/xray-linux-arm
+        chmod +x bin/xray-linux-arm
+    fi
+    chmod +x xray-ui bin/xray-linux-$(arch)
     \cp -f xray-ui.service /etc/systemd/system/
     wget --no-check-certificate -O /usr/bin/xray-ui https://raw.githubusercontent.com/qist/xray-ui/main/xray-ui.sh
     chmod +x /usr/bin/xray-ui
@@ -227,6 +245,72 @@ reset_user() {
     /usr/local/xray-ui/xray-ui setting -username ${username} -password ${password} >/dev/null 2>&1
     green "xray-ui登录用户名：${username}"
     green "xray-ui登录密码：${password}"
+    confirm_restart
+}
+
+generate_random_string() {
+    local n=$1
+    # 定义数字、大写字母和小写字母的集合
+    local characters='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+
+    # 生成随机字符并限制在指定字符集中
+    # 从 /dev/urandom 生成随机字节，使用 tr 进行过滤
+    local random_string=$(cat /dev/urandom | tr -dc "$characters" | fold -w "$n" | head -n 1)
+
+    echo "$random_string"
+}
+
+
+reset_path() {
+    confirm "确定要将访问路径随机10位字符吗" "n"
+    if [[ $? != 0 ]]; then
+        if [[ $# == 0 ]]; then
+            show_menu
+        fi
+        return 0
+    fi
+    path_random=$(generate_random_string 10)
+    /usr/local/xray-ui/xray-ui setting -webBasePath ${path_random} >/dev/null 2>&1
+    green "xray-ui路径：${path_random}"
+    confirm_restart
+}
+
+reset_cert() {
+    confirm "确定要重新设置证书吗" "n"
+    if [[ $? != 0 ]]; then
+        if [[ $# == 0 ]]; then
+            show_menu
+        fi
+        return 0
+    fi
+    LOGD "请输入证书路径:"
+    read -p "输入您的证书路径:" Xray_cert
+    LOGD "证书路径为:${Xray_cert}"
+    LOGD "请输入密钥路径:"
+    read -p "输入您的密钥路径:" Xray_Key
+    LOGD "您的密钥是:${Xray_Key}"
+    /usr/local/xray-ui/xray-ui cert -webCert "${Xray_cert}" -webCertKey "${Xray_Key}"
+    confirm_restart
+}
+
+reset_mTLS() {
+    confirm "确定要重新设置证书吗" "n"
+    if [[ $? != 0 ]]; then
+        if [[ $# == 0 ]]; then
+            show_menu
+        fi
+        return 0
+    fi
+    LOGD "请输入证书路径:"
+    read -p "输入您的证书路径:" Xray_cert
+    LOGD "证书路径为:${Xray_cert}"
+    LOGD "请输入密钥路径:"
+    read -p "输入您的密钥路径:" Xray_Key
+    LOGD "您的密钥是:${Xray_Key}"
+    LOGD "请输入CA路径:"
+    read -p "输入您的CA路径:" Xray_Ca
+    LOGD "您的CA是:${Xray_Ca}"
+    /usr/local/xray-ui/xray-ui cert -webCert "${Xray_cert}" -webCertKey "${Xray_Key}" -webCa "${Xray_Ca}"
     confirm_restart
 }
 
@@ -384,20 +468,19 @@ x25519() {
     else
         arch="amd64"
     fi
-    /usr/local/xray-ui/bin/xray-linux-${arch} x25519
+    /usr/local/xray-ui/bin/xray-linux-$(arch) x25519
     echo ""
     exit 0
 }
 
 geoip() {
-    pushd  /usr/local/xray-ui
+    pushd /usr/local/xray-ui
     ./xray-ui geoip
     echo "重启重新加载更新文件"
     systemctl restart xray-ui
     echo ""
     exit 0
 }
-
 
 crontab() {
     sed -i '/xray-ui geoip/d' /etc/crontab
@@ -514,6 +597,247 @@ show_xray_status() {
     fi
 }
 
+
+install_acme() {
+    cd ~
+    LOGI "正在安装 acme..."
+    curl https://get.acme.sh | sh
+    if [ $? -ne 0 ]; then
+        LOGE "acme 安装失败"
+        return 1
+    else
+        LOGI "acme 安装成功"
+    fi
+    return 0
+}
+
+ssl_cert_issue_main() {
+    echo -e "${green}\t1.${plain} 获取 SSL"
+    echo -e "${green}\t2.${plain} 撤销证书"
+    echo -e "${green}\t3.${plain} 强制续期"
+    echo -e "${green}\t0.${plain} 返回主菜单"
+    read -p "请选择一个选项: " choice
+    case "$choice" in
+    0)
+        show_menu
+        ;;
+    1)
+        ssl_cert_issue
+        ;;
+    2)
+        local domain=""
+        read -p "请输入要撤销证书的域名: " domain
+        ~/.acme.sh/acme.sh --revoke -d ${domain}
+        LOGI "证书已撤销"
+        ;;
+    3)
+        local domain=""
+        read -p "请输入要强制续期的域名: " domain
+        ~/.acme.sh/acme.sh --renew -d ${domain} --force
+        ;;
+    *) echo "无效选项" ;;
+    esac
+}
+
+ssl_cert_issue() {
+    # 首先检查是否安装了 acme.sh
+    if ! command -v ~/.acme.sh/acme.sh &>/dev/null; then
+        echo "未找到 acme.sh，将进行安装"
+        install_acme
+        if [ $? -ne 0 ]; then
+            LOGE "acme 安装失败，请检查日志"
+            exit 1
+        fi
+    fi
+    # 安装 socat
+    case "${release}" in
+    ubuntu | debian | armbian)
+        apt update && apt install socat -y
+        ;;
+    centos | almalinux | rocky | oracle)
+        yum -y update && yum -y install socat
+        ;;
+    fedora)
+        dnf -y update && dnf -y install socat
+        ;;
+    arch | manjaro | parch)
+        pacman -Sy --noconfirm socat
+        ;;
+    *)
+        echo -e "${red}不支持的操作系统，请手动安装必要的软件包${plain}\n"
+        exit 1
+        ;;
+    esac
+    if [ $? -ne 0 ]; then
+        LOGE "socat 安装失败，请检查日志"
+        exit 1
+    else
+        LOGI "socat 安装成功..."
+    fi
+
+    # 获取域名并验证
+    local domain=""
+    read -p "请输入您的域名:" domain
+    LOGD "您的域名是:${domain}，正在检查..."
+    # 判断是否已经存在证书
+    local currentCert=$(~/.acme.sh/acme.sh --list | tail -1 | awk '{print $1}')
+
+    if [ ${currentCert} == ${domain} ]; then
+        local certInfo=$(~/.acme.sh/acme.sh --list)
+        LOGE "系统中已存在该域名的证书，不能重复签发，当前证书详情:"
+        LOGI "$certInfo"
+        exit 1
+    else
+        LOGI "您的域名可以进行证书签发..."
+    fi
+
+    # 创建存放证书的目录
+    certPath="/root/cert/${domain}"
+    if [ ! -d "$certPath" ]; then
+        mkdir -p "$certPath"
+    else
+        rm -rf "$certPath"
+        mkdir -p "$certPath"
+    fi
+
+    # 获取需要使用的端口
+    local WebPort=80
+    read -p "请选择使用的端口，默认为80端口:" WebPort
+    if [[ ${WebPort} -gt 65535 || ${WebPort} -lt 1 ]]; then
+        LOGE "输入的端口号无效，将使用默认端口"
+    fi
+    LOGI "将使用端口:${WebPort} 进行证书签发，请确保此端口已开放..."
+    # 用户需手动处理开放端口及结束占用进程
+    ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+    ~/.acme.sh/acme.sh --issue -d ${domain} --listen-v6 --standalone --httpport ${WebPort}
+    if [ $? -ne 0 ]; then
+        LOGE "证书签发失败，请检查日志"
+        rm -rf ~/.acme.sh/${domain}
+        exit 1
+    else
+        LOGE "证书签发成功，正在安装证书..."
+    fi
+    # 安装证书
+    ~/.acme.sh/acme.sh --installcert -d ${domain} \
+        --ca-file /root/cert/ca.cer \
+        --cert-file /root/cert/${domain}.cer \
+        --key-file /root/cert/${domain}/privkey.pem \
+        --fullchain-file /root/cert/${domain}/fullchain.pem
+
+    if [ $? -ne 0 ]; then
+        LOGE "证书安装失败，退出"
+        rm -rf ~/.acme.sh/${domain}
+        exit 1
+    else
+        LOGI "证书安装成功，开启自动续期..."
+        confirm "是否自动应用ssl?[y/n]" "y"
+        if [ $? -eq 0 ]; then
+           /usr/local/xray-ui/xray-ui cert -webCert "/root/cert/${domain}/fullchain.pem" -webCertKey "/root/cert/${domain}/privkey.pem"
+           confirm_restart
+        else
+          LOGE "手动重置ssl"
+          LOGE "xray-ui 选择22 重置ssl证书"
+        fi
+    fi
+
+    ~/.acme.sh/acme.sh --upgrade --auto-upgrade
+    if [ $? -ne 0 ]; then
+        LOGE "自动续期失败，证书详情如下:"
+        ls -lah $certPath/*
+        chmod 755 $certPath/*
+        exit 1
+    else
+        LOGI "自动续期成功，证书详情如下:"
+        ls -lah $certPath/*
+        chmod 755 $certPath/*
+    fi
+}
+ 
+ssl_cert_issue_CF() {
+    echo -E ""
+    LOGD "******使用说明******"
+    LOGI "此 Acme 脚本需要以下信息:"
+    LOGI "1. Cloudflare 注册的电子邮件"
+    LOGI "2. Cloudflare 全局 API 密钥"
+    LOGI "3. 已解析 DNS 至当前服务器的域名"
+    LOGI "4. 证书申请后默认安装路径为 /root/cert "
+    confirm "确认信息?[y/n]" "y"
+    if [ $? -eq 0 ]; then
+        # 首先检查是否安装了 acme.sh
+        if ! command -v ~/.acme.sh/acme.sh &>/dev/null; then
+            echo "未找到 acme.sh，将进行安装"
+            install_acme
+            if [ $? -ne 0 ]; then
+                LOGE "acme 安装失败，请检查日志"
+                exit 1
+            fi
+        fi
+        CF_Domain=""
+        CF_GlobalKey=""
+        CF_AccountEmail=""
+        certPath=/root/cert
+        if [ ! -d "$certPath" ]; then
+            mkdir $certPath
+        else
+            rm -rf $certPath
+            mkdir $certPath
+        fi
+        LOGD "请输入域名:"
+        read -p "输入您的域名:" CF_Domain
+        LOGD "域名设置为:${CF_Domain}"
+        LOGD "请输入 API 密钥:"
+        read -p "输入您的密钥:" CF_GlobalKey
+        LOGD "您的 API 密钥是:${CF_GlobalKey}"
+        LOGD "请输入注册邮箱:"
+        read -p "输入您的邮箱:" CF_AccountEmail
+        LOGD "您的注册邮箱是:${CF_AccountEmail}"
+        ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+        if [ $? -ne 0 ]; then
+            LOGE "默认 CA 设置为 Lets'Encrypt 失败，脚本退出..."
+            exit 1
+        fi
+        export CF_Key="${CF_GlobalKey}"
+        export CF_Email=${CF_AccountEmail}
+        ~/.acme.sh/acme.sh --issue --dns dns_cf -d ${CF_Domain} -d *.${CF_Domain} --log
+        if [ $? -ne 0 ]; then
+            LOGE "证书签发失败，脚本退出..."
+            exit 1
+        else
+            LOGI "证书签发成功，正在安装..."
+        fi
+        ~/.acme.sh/acme.sh --installcert -d ${CF_Domain} -d *.${CF_Domain} --ca-file /root/cert/ca.cer \
+            --cert-file /root/cert/${CF_Domain}.cer --key-file /root/cert/${CF_Domain}.key \
+            --fullchain-file /root/cert/fullchain.cer
+        if [ $? -ne 0 ]; then
+            LOGE "证书安装失败，脚本退出..."
+            exit 1
+        else
+            LOGI "证书安装成功，开启自动更新..."
+            confirm "是否自动应用ssl?[y/n]" "y"
+            if [ $? -eq 0 ]; then
+               /usr/local/xray-ui/xray-ui cert -webCert "/root/cert/fullchain.cer" -webCertKey "/root/cert/${CF_Domain}.key"
+               confirm_restart
+            else
+              LOGE "手动重置ssl"
+              LOGE "xray-ui  选择22 重置ssl证书"
+           fi
+        fi
+        ~/.acme.sh/acme.sh --upgrade --auto-upgrade
+        if [ $? -ne 0 ]; then
+            LOGE "自动更新设置失败，脚本退出..."
+            ls -lah $certPath
+            chmod 755 $certPath
+            exit 1
+        else
+            LOGI "证书已安装并开启自动更新，具体信息如下:"
+            ls -lah $certPath
+            chmod 755 $certPath
+        fi
+    else
+        show_menu
+    fi
+}
+
 show_usage() {
     echo "xray-ui 管理脚本使用方法: "
     echo "------------------------------------------"
@@ -531,6 +855,8 @@ show_usage() {
     echo "xray-ui update_shell - 更新 xray-ui 脚本"
     echo "xray-ui install      - 安装 xray-ui 面板"
     echo "xray-ui x25519       - REALITY  key 生成"
+    echo "xray-ui ssl_main     - SSL 证书管理"
+    echo "xray-ui ssl_CF       - Cloudflare SSL 证书"
     echo "xray-ui crontab      - 添加geoip到任务计划每天凌晨1.30执行"
     echo "xray-ui uninstall    - 卸载 xray-ui 面板"
     echo "------------------------------------------"
@@ -563,11 +889,22 @@ show_menu() {
   ${green}16.${plain} 更新 xray-ui 脚本
   ${green}17.${plain} 更新 geoip ip库
   ${green}18.${plain} 添加geoip到任务计划
+  ${green}19.${plain} SSL 证书管理
+  ${green}20.${plain} Cloudflare SSL 证书
+  ${green}21.${plain} 重置web 路径
+  ${green}22.${plain} 重置ssl证书
+  ${green}23.${plain} 重置mTLS证书
  "
     show_status
     echo "------------------------------------------"
     acp=$(/usr/local/xray-ui/xray-ui setting -show 2>/dev/null)
     green "$acp"
+    tlsx=$(/usr/local/xray-ui/xray-ui setting -show 2>&1 | grep 证书文件)
+    if [ -z "${tlsx}" ]; then
+    yellow "当前面板http只支持127.0.0.1访问如果外面访问请用ssh转发或者nginx代理或者xray-ui 配置证书 选择22配置证书"
+    yellow "ssh 转发 客户机操作 ssh  -f -N -L 127.0.0.1:22222(ssh代理端口未使用端口):127.0.0.1:54321(xray-ui 端口) root@8.8.8.8(xray-ui 服务器ip)"
+    yellow "浏览器访问 http://127.0.0.1:22222(ssh代理端口未使用端口)/path(web访问路径)"
+    fi
     echo "------------------------------------------"
     uiV=$(/usr/local/xray-ui/xray-ui -v)
     curl -sS -H "Accept: application/vnd.github.v3+json" -o "/tmp/tmp_file" 'https://api.github.com/repos/qist/xray-ui/releases/latest'
@@ -581,7 +918,7 @@ show_menu() {
         yellow "检测到最新版本：${remoteV} ，可选择2进行更新！"
     fi
 
-    echo && read -p "请输入选择 [0-18]: " num
+    echo && read -p "请输入选择 [0-23]: " num
 
     case "${num}" in
     0)
@@ -641,8 +978,23 @@ show_menu() {
     18)
         crontab
         ;;
+    19)
+        ssl_cert_issue_main
+        ;;
+    20)
+        ssl_cert_issue_CF
+        ;;
+    21)
+        check_install && reset_path
+        ;;
+    22)
+        check_install && reset_cert
+        ;;
+    23)
+        check_install && reset_mTLS
+        ;;
     *)
-        echo -e "${red}请输入正确的数字 [0-18]${plain}"
+        echo -e "${red}请输入正确的数字 [0-23]${plain}"
         ;;
     esac
 }
@@ -690,6 +1042,12 @@ if [[ $# > 0 ]]; then
         ;;
     "crontab")
         crontab 0
+        ;;
+    "ssl_main")
+        ssl_cert_issue_main 0
+        ;;
+    "ssl_CF")
+        ssl_cert_issue_CF 0
         ;;
     "uninstall")
         check_install 0 && uninstall 0

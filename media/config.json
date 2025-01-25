@@ -31,7 +31,9 @@
   "policy": {
     "system": {
       "statsInboundDownlink": true,
-      "statsInboundUplink": true
+      "statsInboundUplink": true,
+      "statsOutboundDownlink": true,
+      "statsOutboundUplink": true
     },
     "levels": {
       "0": {
