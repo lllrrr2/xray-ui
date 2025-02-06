@@ -18,6 +18,9 @@
     
 ### VPS 安全加固 建议
 
+<details>
+  <summary>点击查看 VPS 安全加固 建议</summary>
+
 1、保持内核版本更新修复内核级别漏洞 
 
 2、开启防火墙千万别裸奔
@@ -89,6 +92,7 @@ firewall-cmd --reload
 # 查看规则
 firewall-cmd --list-all
 ```
+</details>
 
 ----------------------------------------------------------------------------------------------------------------------------------------------
 更新日志：
@@ -111,16 +115,123 @@ firewall-cmd --list-all
 
 2023.4.23 添加docker镜像
 
+### SSL证书
+
+<details>
+  <summary>点击查看SSL证书详情</summary>
+
+### ACME
+使用ACME管理SSL证书：
+
+1. 确保您的域名正确解析到服务器。
+2. 在终端中运行 `xray-ui` 命令，然后选择 `SSL证书管理`。
+3. 您将看到以下选项：
+
+   - **获取 SSL:** 获取SSL证书。
+   - **撤销证书:** 吊销现有的SSL证书。
+   - **强制续期:** 强制更新SSL证书。
+
+### Certbot
+
+安装并使用Certbot：
+
+```bash
+apt-get install certbot -y
+certbot certonly --standalone --agree-tos --register-unsafely-without-email -d yourdomain.com
+certbot renew --dry-run
+```
+
+### Cloudflare
+
+管理脚本内置了Cloudflare的SSL证书申请。要使用此脚本申请证书，您需要以下信息：
+
+- Cloudflare注册的电子邮件
+- Cloudflare全局API密钥
+- 域名必须通过Cloudflare解析到当前服务器
+
+**如何获取Cloudflare全局API密钥：**
+
+1. 在终端中运行 `xray-ui` 命令，然后选择 `Cloudflare SSL证书`。
+2. 访问链接：[Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens)。
+3. 点击“查看全局API密钥”（参见下图）：
+   ![](media/APIKey1.PNG)
+4. 您可能需要重新验证您的账户。之后将显示API密钥（参见下图）：
+   ![](media/APIKey2.png)
+
+使用时，只需输入您的 `域名`、`电子邮件` 和 `API密钥`。如下图所示：
+   ![](media/DetailEnter.png)
+
+### xray-ui 配置ssl证书
+```bash
+xray-ui  选择22
+输入证书路径跟密钥路径
+手动配置证书
+/usr/local/xray-ui/xray-ui  cert -webCert /root/cert/你的域名/fullchain.pem -webCertKey /root/cert/你的域名/privkey.pem
+清理证书不输入任何东西直接回车
+重启xray-ui
+xray-ui  选择10
+
+```
+### xray-ui 配置mTLS
+```bash
+xray-ui  选择23
+输入证书路径跟密钥路径CA路径
+手动配置证书
+/usr/local/xray-ui/xray-ui cert -webCert /root/cert/你的域名/fullchain.pem -webCertKey /root/cert/你的域名/privkey.pem -webCa /root/cert/ca.cer
+清理证书不输入任何东西直接回车
+重启xray-ui
+xray-ui  选择10
+```
+</details>
+
+### docker运行
+<details>
+  <summary>点击查看 docker运行</summary>
+
 ```bash
 # juestnow/xray-ui:latest 最新版本 指定版本号docker pull juestnow/xray-ui:1.8.6
- docker run -d --net=host -v/etc/xray-ui:/etc/xray-ui --restart=unless-stopped --name xray-ui juestnow/xray-ui:latest
+ docker run -d --net=host -v/etc/xray-ui:/etc/xray-ui  -v/root/cert:/root/cert --restart=unless-stopped --name xray-ui juestnow/xray-ui:latest
 # 查看默认账号密码
-docker exec -ti  启动的容器名 /root/xray-ui setting -show
-docker run  --rm  -v/etc/xray-ui:/etc/xray-ui  juestnow/xray-ui  /root/xray-ui setting -show
+docker exec -ti  启动的容器名 /app/xray-ui setting -show
+docker exec -ti xray-ui  /app/xray-ui setting -show
 # 设置账号密码
-docker exec -ti  启动的容器名 /root/xray-ui setting -password abcd -username abacd 
-docker run  --rm  -v/etc/xray-ui:/etc/xray-ui  juestnow/xray-ui /root/xray-ui setting -password abcd -username abacd
+docker exec -ti  启动的容器名 /app/xray-ui setting -password abcd -username abacd 
+docker exec -ti xray-ui  /app/xray-ui setting -password abcd -username abacd
+# 设置path 
+docker exec -ti  启动的容器名 /app/xray-ui setting --webBasePath aaaaddffdf
+docker exec -ti xray-ui  /app/xray-ui setting --webBasePath aaaaddffdf
+# 证书配置 
+## TLS 配置
+docker exec -ti xray-ui  /app/xray-ui  cert -webCert /root/cert/你的域名/fullchain.pem -webCertKey /root/cert/你的域名/privkey.pem
+## mTLS 配置
+docker exec -ti xray-ui  /app/xray-ui cert -webCert /root/cert/你的域名/fullchain.pem -webCertKey /root/cert/你的域名/privkey.pem -webCa /root/cert/ca.cer
+# 第一次访问
+当前面板http只支持127.0.0.1访问如果外面访问请用ssh转发或者nginx代理或者xray-ui 配置证书 选择22配置证书
+ssh 转发 客户机操作 ssh  -f -N -L 127.0.0.1:22222(ssh代理端口未使用端口):127.0.0.1:54321(xray-ui 端口) root@8.8.8.8(xray-ui 服务器ip)
+浏览器访问 http://127.0.0.1:22222(ssh代理端口未使用端口)/path(web访问路径)
 ```
+</details>
+
+### 第一次访问
+
+<details>
+  <summary>点击查看 手动安装</summary>
+
+```bash
+当前面板http只支持127.0.0.1访问如果外面访问请用ssh转发或者nginx代理或者xray-ui 配置证书 选择22配置证书
+ssh 转发 客户机操作 ssh  -f -N -L 127.0.0.1:22222(ssh代理端口未使用端口):127.0.0.1:54321(xray-ui 端口) root@8.8.8.8(xray-ui 服务器ip)
+例子：ssh  -f -N -L 127.0.0.1:22222:127.0.0.1:54321 root@8.8.8.8
+浏览器访问 http://127.0.0.1:22222(ssh代理端口未使用端口)/path(web访问路径)
+或者服务器执行 ssh -f -N -L 0.0.0.0:22222(ssh代理端口未使用端口):127.0.0.1:54321(xray-ui 端口) root@127.0.0.1 
+例子：ssh -f -N -L 0.0.0.0:22222:127.0.0.1:54321 root@127.0.0.1
+然后用你服务器地址+ssh转发端口访问
+
+xshell 配置：https://netsarang.atlassian.net/wiki/spaces/ENSUP/pages/27295927/XDMCP+connection+through+SSH+tunneling
+putty 配置：https://knowledge.exlibrisgroup.com/Voyager/Knowledge_Articles/Set_Up_SSH_Port_Forwarding_in_Putty
+SecureCRT  配置：https://www.vandyke.com/support/tips/socksproxy.html
+windows openssh 配置： https://www.cnblogs.com/managechina/p/18189889
+```
+</details>
 
 2023.4.20 添加 配置文件下载本地，DB文件下载到本地，更新依赖到最新！
 
@@ -149,9 +260,12 @@ docker run  --rm  -v/etc/xray-ui:/etc/xray-ui  juestnow/xray-ui /root/xray-ui se
 -------------------------------------------------------------------------------------------------------------------------------------------------
 ### 手动安装
 
+<details>
+  <summary>点击查看 手动安装</summary>
+
 ```bash
 # 下载 
-wget -N --no-check-certificate -O /usr/local/xray-ui-linux-amd64.tar.gz https://github.com/qist/xray-ui/releases/latest/download/xray-ui-linux-amd64.tar.gz
+wget  --no-check-certificate -O /usr/local/xray-ui-linux-amd64.tar.gz https://github.com/qist/xray-ui/releases/latest/download/xray-ui-linux-amd64.tar.gz
 
 # 解压
     cd /usr/local/
@@ -170,14 +284,17 @@ wget -N --no-check-certificate -O /usr/local/xray-ui-linux-amd64.tar.gz https://
     # 设置端口
    /usr/local/xray-ui/xray-ui setting -port  5432
 ```
+</details>
 
 ### VPS直接运行一键脚本
 
 ```bash
 bash <(curl -Ls  https://raw.githubusercontent.com/qist/xray-ui/main/install.sh)
 ```
-
 #### 编译
+
+<details>
+  <summary>点击查看 编译</summary>
 
 ```bash
 git clone https://github.com/qist/xray-ui.git
@@ -198,9 +315,13 @@ debian/ubuntu解决方案
 apt install gcc-aarch64-linux-gnu
 CGO_ENABLED=1 GOARCH=arm64 CC="aarch64-linux-gnu-gcc" go build -o xray-ui/xray-ui  -ldflags '-linkmode "external" -extldflags "-static"' main.go 
 ```
+</details>
 
 --------------------------------------------------------------------------------------------------------------------------------------------------
 ### nginx 代理设置
+
+<details>
+  <summary>点击查看 反向代理配置</summary>
 
 ```nginx
 upstream xray-ui {
@@ -209,12 +330,32 @@ upstream xray-ui {
         keepalive 1000;
 }
 server {
-    listen 80;
+    listen 443;
     server_name xray.test.com;
+    client_max_body_size 0;
+    chunked_transfer_encoding on;
+    client_body_buffer_size 202400k;
+    client_body_in_single_buffer on;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; preload" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-Content-Type-Options nosniff;
+    add_header X-Frame-Options "DENY";
+    add_header Alt-Svc 'h3=":443"; ma=86400, h3-29=":443"; ma=86400';
+    ssl_certificate /apps/nginx/sslkey/test.com/fullchain.crt;
+    ssl_certificate_key /apps/nginx/sslkey/test.com/private.key;
+    ssl_buffer_size 4k;
+    ssl_protocols TLSv1.3 TLSv1.2;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers on;
+    ssl_ecdh_curve X25519:P-256:P-384;
+    client_header_timeout 24h;
+    keepalive_timeout 24h;
     location / {
         proxy_redirect     off;
         proxy_set_header   Host $host;
         proxy_set_header   X-Real-IP   $remote_addr;
+        proxy_set_header   X-Forwarded-Proto $scheme;
         proxy_set_header   X-Forwarded-For  $proxy_add_x_forwarded_for;
         proxy_ssl_session_reuse off;
         proxy_ssl_server_name on;
@@ -233,12 +374,143 @@ server {
         proxy_store off;
     }
  }
+
+ 后端https转发配置参考：
+
+ upstream xray-ui {
+        least_conn;
+        server 127.0.0.1:54321 max_fails=3 fail_timeout=30s;
+        keepalive 1000;
+}
+server {
+    listen 443;
+    server_name xray.test.com;
+    client_max_body_size 0;
+    chunked_transfer_encoding on;
+    client_body_buffer_size 202400k;
+    client_body_in_single_buffer on;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; preload" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-Content-Type-Options nosniff;
+    add_header X-Frame-Options "DENY";
+    add_header Alt-Svc 'h3=":443"; ma=86400, h3-29=":443"; ma=86400';
+    ssl_certificate /apps/nginx/sslkey/test.com/fullchain.crt;
+    ssl_certificate_key /apps/nginx/sslkey/test.com/private.key;
+    ssl_buffer_size 4k;
+    ssl_protocols TLSv1.3 TLSv1.2;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers on;
+    ssl_ecdh_curve X25519:P-256:P-384;
+    client_header_timeout 24h;
+    keepalive_timeout 24h;
+    location / {
+        proxy_redirect     off;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP   $remote_addr;
+        proxy_set_header   X-Forwarded-For  $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_ssl_session_reuse off;
+        proxy_ssl_server_name on;
+        proxy_buffering    off;
+        proxy_ssl_name xray.test.com; #证书域名
+        # 关闭对后端服务器自签名证书的验证
+        proxy_ssl_verify off;
+        proxy_connect_timeout      90;
+        proxy_send_timeout         90;
+        proxy_read_timeout         90;
+        proxy_buffer_size          4k;
+        proxy_buffers              4 32k;
+        proxy_busy_buffers_size    64k;
+        proxy_http_version 1.1;
+        proxy_set_header Accept-Encoding "";
+        proxy_pass https://xray-ui;
+        #proxy_pass_request_headers on;
+        proxy_set_header Connection "keep-alive";
+        proxy_store off;
+    }
+ }
+
+后端mTLS 转发配置参考：
+ upstream xray-ui {
+        least_conn;
+        server 127.0.0.1:54321 max_fails=3 fail_timeout=30s;
+        keepalive 1000;
+}
+server {
+    listen 443;
+    server_name xray.test.com;
+    client_max_body_size 0;
+    chunked_transfer_encoding on;
+    client_body_buffer_size 202400k;
+    client_body_in_single_buffer on;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; preload" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-Content-Type-Options nosniff;
+    add_header X-Frame-Options "DENY";
+    add_header Alt-Svc 'h3=":443"; ma=86400, h3-29=":443"; ma=86400';
+    ssl_certificate /apps/nginx/sslkey/test.com/fullchain.crt;
+    ssl_certificate_key /apps/nginx/sslkey/test.com/private.key;
+    ssl_buffer_size 4k;
+    ssl_protocols TLSv1.3 TLSv1.2;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers on;
+    ssl_ecdh_curve X25519:P-256:P-384;
+    client_header_timeout 24h;
+    keepalive_timeout 24h;
+    # 添加客户端证书和私钥路径
+    ssl_client_certificate /apps/nginx/sslkey/test.com/fullchain.crt;
+    ssl_certificate_key /apps/nginx/sslkey/test.com/private.key;
+
+    # 如果需要指定 CA 证书
+    # ssl_trusted_certificate /apps/nginx/sslkey/test.com/ca.crt;
+
+    # 强制 SSL/TLS
+    proxy_ssl_certificate /apps/nginx/sslkey/test.com/fullchain.crt;
+    proxy_ssl_certificate_key /apps/nginx/sslkey/test.com/private.key;
+    proxy_ssl_trusted_certificate /apps/nginx/sslkey/test.com/ca.crt;
+
+    # 确保启用 TLS 验证
+    proxy_ssl_verify on;
+    proxy_ssl_verify_depth 2; # 可根据需要调整
+    location / {
+        proxy_redirect     off;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP   $remote_addr;
+        proxy_set_header   X-Forwarded-For  $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_ssl_session_reuse off;
+        proxy_ssl_server_name on;
+        proxy_buffering    off;
+        proxy_ssl_name xray.test.com; #证书域名
+        # 关闭对后端服务器自签名证书的验证
+        proxy_ssl_verify off;
+        proxy_connect_timeout      90;
+        proxy_send_timeout         90;
+        proxy_read_timeout         90;
+        proxy_buffer_size          4k;
+        proxy_buffers              4 32k;
+        proxy_busy_buffers_size    64k;
+        proxy_http_version 1.1;
+        proxy_set_header Accept-Encoding "";
+        proxy_pass https://xray-ui;
+        #proxy_pass_request_headers on;
+        proxy_set_header Connection "keep-alive";
+        proxy_store off;
+    }
+ }
  # vpn代理nginx 配置参考
 https://github.com/qist/xray/tree/main/xray/nginx
 ```
+</details>
 
 --------------------------------------------------------------------------------------------------------------------------------------------------
+
 ### 关于TG通知（上游内容）
+
+<details>
+  <summary>点击查看 关于TG通知</summary>
 
 使用说明:在面板后台设置机器人相关参数
 
@@ -283,3 +555,5 @@ Tg机器人ChatId
 /version 0.1.1.1 xray升级到1.6.0版本
 
 /help 获取帮助信息
+
+</details>

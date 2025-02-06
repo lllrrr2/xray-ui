@@ -3,8 +3,11 @@ package web
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"embed"
+	"fmt"
 	"html/template"
+	"io/ioutil"
 	"io"
 	"io/fs"
 	"net"
@@ -354,6 +357,10 @@ func (s *Server) Start() (err error) {
 	if err != nil {
 		return err
 	}
+	caFile, err := s.settingService.GetCaFile()
+	if err != nil {
+		return err
+	}
 	listen, err := s.settingService.GetListen()
 	if err != nil {
 		return err
@@ -362,12 +369,54 @@ func (s *Server) Start() (err error) {
 	if err != nil {
 		return err
 	}
+	if certFile == "" || keyFile == "" {
+		// If any of the files are empty, override `listen` to use "127.0.0.1"
+		if !isInternalIP(listen) {
+			// If not internal, fallback to "127.0.0.1"
+			listen = "127.0.0.1"
+		}
+	}
+	
 	listenAddr := net.JoinHostPort(listen, strconv.Itoa(port))
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return err
 	}
-	if certFile != "" || keyFile != "" {
+
+	if certFile != "" && keyFile != "" && caFile != "" {
+		// Load server certificate and key
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			listener.Close()
+			return err
+		}
+	
+		// Load the CA certificate that will be used to verify client certificates
+		caCert, err := ioutil.ReadFile(caFile)
+		if err != nil {
+			listener.Close()
+			return fmt.Errorf("failed to read CA certificate: %v", err)
+		}
+	
+		// Create a CertPool and add the CA certificate to it
+		caCertPool := x509.NewCertPool()
+		if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
+			listener.Close()
+			return fmt.Errorf("failed to append CA certificate")
+		}
+	
+		// Configure TLS with the server cert and require client cert verification (mTLS)
+		c := &tls.Config{
+			Certificates: []tls.Certificate{cert},    // Server certificate
+			ClientCAs:    caCertPool,                // CA pool for verifying client certs
+			ClientAuth:   tls.RequireAndVerifyClientCert, // Require and verify client certificates
+		}
+		// Wrap the listener with AutoHTTPS and TLS support
+		listener = network.NewAutoHttpsListener(listener)
+		listener = tls.NewListener(listener, c) // Apply TLS config to listener
+	}	
+
+	if certFile != "" && keyFile != "" && caFile == ""{
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
 			listener.Close()
@@ -380,7 +429,9 @@ func (s *Server) Start() (err error) {
 		listener = tls.NewListener(listener, c)
 	}
 
-	if certFile != "" || keyFile != "" {
+	if certFile != "" && keyFile != "" && caFile != "" {
+		logger.Info("web server run mTLS on", listener.Addr())
+	} else if certFile != "" && keyFile != "" && caFile == "" {
 		logger.Info("web server run https on", listener.Addr())
 	} else {
 		logger.Info("web server run http on", listener.Addr())
@@ -441,4 +492,15 @@ func (s *Server) GetCtx() context.Context {
 
 func (s *Server) GetCron() *cron.Cron {
 	return s.cron
+}
+
+func isInternalIP(ip string) bool {
+	if strings.HasPrefix(ip, "127.") || // Loopback
+		strings.HasPrefix(ip, "10.") || // Class A
+		strings.HasPrefix(ip, "192.168.") || // Class C
+		(ip >= "172.16.0.0" && ip <= "172.31.255.255") || // Class B
+		(ip >= "100.64.0.0" && ip <= "100.127.255.255") { // Shared Address Space
+		return true
+	}
+	return false
 }

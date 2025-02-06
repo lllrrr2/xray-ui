@@ -26,6 +26,7 @@ var defaultValueMap = map[string]string{
 	"webPort":            "54321",
 	"webCertFile":        "",
 	"webKeyFile":         "",
+	"webCAFile":         "",
 	"secret":             random.Seq(32),
 	"webBasePath":        "/",
 	"timeLocation":       "Asia/Shanghai",
@@ -254,12 +255,28 @@ func (s *SettingService) SetPort(port int) error {
 	return s.setInt("webPort", port)
 }
 
+func (s *SettingService) SetCertFile(webCertFile string) error {
+	return s.setString("webCertFile", webCertFile)
+}
+
 func (s *SettingService) GetCertFile() (string, error) {
 	return s.getString("webCertFile")
 }
 
+func (s *SettingService) SetKeyFile(webKeyFile string) error {
+	return s.setString("webKeyFile", webKeyFile)
+}
+
 func (s *SettingService) GetKeyFile() (string, error) {
 	return s.getString("webKeyFile")
+}
+
+func (s *SettingService) SetCaFile(webCAFile string) error {
+	return s.setString("webCAFile", webCAFile)
+}
+
+func (s *SettingService) GetCaFile() (string, error) {
+	return s.getString("webCAFile")
 }
 
 func (s *SettingService) GetSecret() ([]byte, error) {
@@ -271,6 +288,16 @@ func (s *SettingService) GetSecret() ([]byte, error) {
 		}
 	}
 	return []byte(secret), err
+}
+
+func (s *SettingService) SetBasePath(basePath string) error {
+	if !strings.HasPrefix(basePath, "/") {
+		basePath = "/" + basePath
+	}
+	if !strings.HasSuffix(basePath, "/") {
+		basePath += "/"
+	}
+	return s.setString("webBasePath", basePath)
 }
 
 func (s *SettingService) GetBasePath() (string, error) {
@@ -286,6 +313,7 @@ func (s *SettingService) GetBasePath() (string, error) {
 	}
 	return basePath, nil
 }
+
 
 func (s *SettingService) GetTimeLocation() (*time.Location, error) {
 	l, err := s.getString("timeLocation")

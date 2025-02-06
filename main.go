@@ -98,6 +98,26 @@ func showSetting(show bool) {
 		if err != nil {
 			fmt.Println("get current port fialed,error info:", err)
 		}
+		listen, err := settingService.GetListen()
+		if err != nil {
+			fmt.Println("get current listen fialed,error info:", err)
+		}
+		webBasePath, err := settingService.GetBasePath()
+		if err != nil {
+			fmt.Println("get webBasePath failed, error info:", err)
+		}
+		GetCertFile, err := settingService.GetCertFile()
+		if err != nil {
+			fmt.Println("get GetCertFile failed, error info:", err)
+		}
+		GetKeyFile, err := settingService.GetKeyFile()
+		if err != nil {
+			fmt.Println("get GetKeyFile failed, error info:", err)
+		}
+		GetCaFile, err := settingService.GetCaFile()
+		if err != nil {
+			fmt.Println("get GetCaFile failed, error info:", err)
+		}
 		userService := service.UserService{}
 		userModel, err := userService.GetFirstUser()
 		if err != nil {
@@ -112,9 +132,27 @@ func showSetting(show bool) {
 		fmt.Println("登录用户名:", username)
 		fmt.Println("登录密码:", userpasswd)
 		fmt.Println("登录端口:", port)
+		fmt.Println("监听地址:", listen)
+		if webBasePath != "" {
+			fmt.Println("Web 路径:", webBasePath)
+		} else {
+			fmt.Println("Web 路径 is not set")
+		}
+		if GetCertFile != "" {
+			fmt.Println("证书文件:", GetCertFile)
+			fmt.Println("私钥文件:", GetKeyFile)
+		} else {
+			fmt.Println("证书 is not set")
+		}
+		if GetCaFile != "" {
+			fmt.Println("CA mTLS 开启:", GetCaFile)
+		} else {
+			fmt.Println("CA is not set")
+		}
+
 	}
 }
-
+ 
 func updateTgbotEnableSts(status bool) {
 	settingService := service.SettingService{}
 	currentTgSts, err := settingService.GetTgbotenabled()
@@ -175,7 +213,7 @@ func updateTgbotSetting(tgBotToken string, tgBotChatid int, tgBotRuntime string)
 	}
 }
 
-func updateSetting(port int, username string, password string, listen  string) {
+func updateSetting(port int, username string, password string, listen  string, webBasePath string) {
 	err := database.InitDB(config.GetDBPath())
 	if err != nil {
 		fmt.Println(err)
@@ -208,6 +246,14 @@ func updateSetting(port int, username string, password string, listen  string) {
 		} else {
 			fmt.Printf("set listen %v success", listen)
 		}		 
+	}
+	if webBasePath != "" {
+		err := settingService.SetBasePath(webBasePath)
+		if err != nil {
+			fmt.Println("Failed to set base URI path:", err)
+		} else {
+			fmt.Println("Base URI path set successfully")
+		}
 	}
 }
 
@@ -249,6 +295,42 @@ func UpdateAllip() {
 	}
 }
 
+func updateCert(publicKey string, privateKey string, clientCa string) {
+	err := database.InitDB(config.GetDBPath())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	if (privateKey != "" && publicKey != "") || (privateKey == "" && publicKey == "") {
+		settingService := service.SettingService{}
+		err = settingService.SetCertFile(publicKey)
+		if err != nil {
+			fmt.Println("set certificate public key failed:", err)
+		} else {
+			fmt.Println("set certificate public key success")
+		}
+
+		err = settingService.SetKeyFile(privateKey)
+		if err != nil {
+			fmt.Println("set certificate private key failed:", err)
+		} else {
+			fmt.Println("set certificate private key success")
+		}
+	} else {
+		fmt.Println("both public and private key should be entered.")
+	}
+
+	if (clientCa != "") || (clientCa == "") {
+		settingService := service.SettingService{}
+		err = settingService.SetCaFile(clientCa)
+		if err != nil {
+			fmt.Println("set mTLS ca failed:", err)
+		} else {
+			fmt.Println("set mTLS ca success")
+		}
+	}
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -273,6 +355,10 @@ func main() {
 	var listen string
 	var username string
 	var password string
+	var webBasePath string
+	var webCertFile string
+	var webKeyFile string
+	var webCAFile string
 	var tgbottoken string
 	var tgbotchatid int
 	var enabletgbot bool
@@ -285,11 +371,15 @@ func main() {
 	settingCmd.StringVar(&listen, "listen", "", "set panel listen")
 	settingCmd.StringVar(&username, "username", "", "set login username")
 	settingCmd.StringVar(&password, "password", "", "set login password")
+	settingCmd.StringVar(&webBasePath, "webBasePath", "", "Set base path for Panel")
+	settingCmd.StringVar(&webCertFile, "webCert", "", "Set path to public key file for panel")
+	settingCmd.StringVar(&webKeyFile, "webCertKey", "", "Set path to private key file for panel")
+	settingCmd.StringVar(&webCAFile, "webCa", "", "Set path to mTLS ca file for panel")
 	settingCmd.StringVar(&tgbottoken, "tgbottoken", "", "set telegrame bot token")
 	settingCmd.StringVar(&tgbotRuntime, "tgbotRuntime", "", "set telegrame bot cron time")
 	settingCmd.IntVar(&tgbotchatid, "tgbotchatid", 0, "set telegrame bot chat id")
 	settingCmd.BoolVar(&enabletgbot, "enabletgbot", false, "enable telegram bot notify")
-
+ 
 	oldUsage := flag.Usage
 	flag.Usage = func() {
 		oldUsage()
@@ -334,7 +424,7 @@ func main() {
 		if reset {
 			resetSetting()
 		} else {
-			updateSetting(port, username, password, listen)
+			updateSetting(port, username, password, listen, webBasePath)
 		}
 		if show {
 			showSetting(show)
@@ -349,6 +439,17 @@ func main() {
 			return
 		}
 		UpdateAllip()
+	case "cert":
+		err := settingCmd.Parse(os.Args[2:])
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		if reset {
+			updateCert("", "", "")
+		} else {
+			updateCert(webCertFile, webKeyFile , webCAFile)
+		}
 	default:
 		fmt.Println("except 'run' or 'v2-ui' or 'setting' subcommands")
 		fmt.Println()
